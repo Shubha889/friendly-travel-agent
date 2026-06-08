@@ -116,7 +116,10 @@ See `docs/architecture.md` for the Mermaid diagram of the multi-agent workflow.
 
 ## Helpful Demo Prompts
 
-- `I want to fly from Singapore to Tokyo on June 15 and need a hotel near Shinjuku for 5 nights.`
-- `I only know I want to go to Tokyo. Can you ask me what else you need?`
-- `Change the destination from Tokyo to Seoul and keep the same dates.`
-- `Is June a good time to visit Tokyo?`
+## Helpful Demo Prompts
+
+- I want to travel from Bangalore to Singapore.
+- Is June a good time to visit Tokyo?
+- I want to travel from Chennai to Tokyo.
+- From Singapore to Tokyo.
+- Is it good time to visit Paris?
