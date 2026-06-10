@@ -1,7 +1,6 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph
 import uuid
-from datetime import datetime
-
+from datetime import datetime, timedelta
 from orchestrator.state import TravelState
 from orchestrator.extractor import extract_travel_details
 
@@ -24,7 +23,9 @@ def detect_intent(state: TravelState):
             "change",
             "modify",
             "update",
-            "instead"
+            "instead",
+            "replace",
+            "switch"
         ]
     )
 
@@ -121,6 +122,7 @@ def detect_intent(state: TravelState):
             existing[
                 "hotel_location_preference"
             ] = state["user_input"]
+        state["travel_parameters"] = existing
 
     else:
 
@@ -137,11 +139,10 @@ def detect_intent(state: TravelState):
             if key == "modification_request":
                 continue
 
-            if key == "needs_hotel":
+            if key == "hotel_change_request":
+                continue
 
-                if existing.get("needs_hotel") is None:
-                    existing["needs_hotel"] = value
-
+            if key == "requested_hotel":
                 continue
 
             if key == "passengers" and value <= 0:
@@ -152,31 +153,12 @@ def detect_intent(state: TravelState):
 
             existing[key] = value
 
-            print(
-                "AFTER MERGE =",
-                existing
-            )
+        print(
+            "FINAL TRAVEL PARAMS =",
+            existing
+        )
 
-            state["travel_parameters"] = existing
-
-            print(
-                "SAVED PARAMS =",
-                state["travel_parameters"]
-            )
-
-    flight_keywords = [
-        "flight",
-        "fly",
-        "airline",
-        "ticket"
-    ]
-
-    hotel_keywords = [
-        "hotel",
-        "stay",
-        "room",
-        "resort"
-    ]
+        state["travel_parameters"] = existing
 
     state["flight_required"] = (
         bool(existing.get("origin"))
@@ -190,17 +172,58 @@ def detect_intent(state: TravelState):
             False
         )
     )
+    
+    travel_context_exists = any(
+        [
+            existing.get("origin"),
+            existing.get("destination"),
+            existing.get("departure_date"),
+            existing.get("return_date"),
+            existing.get("passengers")
+        ]
+    )
+    print(
+        "GENERAL QUESTION CHECK =",
+        text
+    )
+
+    travel_question_phrases = [
+
+        "weather",
+
+        "best time",
+
+        "good time",
+
+        "good season",
+
+        "visit",
+
+        "is it safe",
+
+        "culture",
+
+        "local food",
+
+        "places to visit",
+
+        "what to visit",
+
+        "things to do",
+
+        "tourist attractions",
+
+        "recommendations"
+    ]
 
     state["is_general_question"] = any(
-        word in text
-        for word in [
-            "weather",
-            "best time",
-            "safe",
-            "culture",
-            "food",
-            "visit"
-        ]
+        phrase in text
+        for phrase in travel_question_phrases
+    )
+
+    print(
+        "IS_GENERAL_QUESTION =",
+        state["is_general_question"]
     )
 
     return state
@@ -232,17 +255,21 @@ def handle_greeting(state):
     return state
 
 def handle_general_question(state):
-    print("GENERAL QUESTION NODE HIT")
 
     if not state.get(
         "is_general_question",
         False
     ):
         return state
+    print("GENERAL QUESTION NODE HIT")
+    
 
     text = state["user_input"].lower()
 
-    if "tokyo" in text:
+    if (
+        "tokyo" in text
+        or state.get("travel_parameters", {}).get("destination") == "Tokyo"
+    ):
 
         state["final_response"] = """
 🌸 Tokyo is a wonderful destination year-round.
@@ -260,7 +287,10 @@ Would you like help planning a trip to Tokyo?
 """
         return state
 
-    if "paris" in text:
+    if (
+        "paris" in text
+        or state.get("travel_parameters", {}).get("destination") == "Paris"
+    ):
 
         state["final_response"] = """
 🗼 Paris is especially beautiful during spring and early summer.
@@ -328,9 +358,10 @@ def check_missing_information(state):
     elif (
         params.get("needs_hotel") is True
         and
+        not params.get("return_date")
+        and
         not params.get("nights")
     ):
-
         missing.append("nights")
 
     elif (
@@ -448,34 +479,69 @@ def handle_modification(state):
         {}
     )
 
+    text = state.get(
+        "user_input",
+        ""
+    ).lower()
+
+    # ----------------------------------
+    # DETECT DESTINATION CHANGE
+    # ----------------------------------
+
+    destination_change = any(
+        phrase in text
+        for phrase in [
+            "change destination",
+            "destination to",
+            "change to",
+            "switch to",
+            "go to"
+        ]
+    )
+
     # ----------------------------------
     # RESET OLD SEARCH RESULTS
     # ----------------------------------
 
-    if params.get("destination"):
+    state["selected_flight"] = None
 
-        state["selected_flight"] = None
+    state["selected_hotel"] = None
 
-        state["selected_hotel"] = None
+    state["flight_response"] = {}
 
-        state["flight_response"] = {}
+    state["hotel_response"] = {}
 
-        state["hotel_response"] = {}
+    state["awaiting_flight_selection"] = False
 
-        state["awaiting_flight_selection"] = False
+    state["awaiting_flight_confirmation"] = False
 
-        state["awaiting_flight_confirmation"] = False
+    state["awaiting_hotel_selection"] = False
 
-        state["awaiting_hotel_selection"] = False
+    state["awaiting_hotel_confirmation"] = False
 
-        state["awaiting_hotel_confirmation"] = False
+    state["awaiting_hotel_opt_in"] = False
 
-        state["awaiting_hotel_opt_in"] = False
-
-        state["booking_confirmed"] = False
+    state["booking_confirmed"] = False
 
     # ----------------------------------
-    # BUILD FRIENDLY RESPONSE
+    # CLEAR HOTEL DETAILS ONLY IF
+    # DESTINATION CHANGED
+    # ----------------------------------
+
+    if destination_change:
+
+        params.pop(
+            "hotel_location_preference",
+            None
+        )
+
+        params.pop(
+            "nights",
+            None
+        )
+
+    # ----------------------------------
+    # BUILD RESPONSE
     # ----------------------------------
 
     response = """
@@ -494,15 +560,22 @@ I've updated your trip details.
     if params.get("destination"):
 
         response += (
-            f"\n📍 Destination: "
+            f"\n🌍 Destination: "
             f"{params['destination']}"
         )
 
     if params.get("departure_date"):
 
         response += (
-            f"\n📅 Date: "
+            f"\n📅 Departure Date: "
             f"{params['departure_date']}"
+        )
+
+    if params.get("return_date"):
+
+        response += (
+            f"\n📅 Return Date: "
+            f"{params['return_date']}"
         )
 
     if params.get("passengers"):
@@ -607,6 +680,40 @@ def call_hotel_agent(state):
 
     params = state["travel_parameters"]
 
+    check_in_date = params.get(
+        "departure_date",
+        ""
+    )
+
+    check_out_date = params.get(
+        "return_date",
+        ""
+    )
+
+    if (
+        params.get("departure_date")
+        and
+        params.get("return_date")
+    ):
+        try:
+
+            dep = datetime.strptime(
+                params["departure_date"],
+                "%Y-%m-%d"
+            )
+
+            ret = datetime.strptime(
+                params["return_date"],
+                "%Y-%m-%d"
+            )
+
+            params["nights"] = (
+                ret - dep
+            ).days
+
+        except Exception:
+            pass
+
     request = {
         "task_id": str(uuid.uuid4()),
         "task_type": "hotel_search",
@@ -618,15 +725,9 @@ def call_hotel_agent(state):
                 ""
             ),
 
-            "check_in_date": params.get(
-                "departure_date",
-                ""
-            ),
+            "check_in_date": check_in_date,
 
-            "check_out_date": params.get(
-                "return_date",
-                ""
-            ),
+            "check_out_date": check_out_date,
 
             "guests": params.get(
                 "passengers",
@@ -729,21 +830,18 @@ def handle_flight_selection(state):
 
     selected = None
 
-    if "1" in text:
-        selected = flights[0]
+    if text.strip().isdigit():
 
-    elif "2" in text and len(flights) > 1:
-        selected = flights[1]
+        index = int(text.strip()) - 1
+
+        if 0 <= index < len(flights):
+            selected = flights[index]
 
     else:
 
         for flight in flights:
 
-            if (
-                flight["airline"]
-                .lower()
-                in text
-            ):
+            if flight["airline"].lower() in text:
                 selected = flight
                 break
 
@@ -752,50 +850,58 @@ def handle_flight_selection(state):
 
     state["selected_flight"] = selected
 
-    state[
-        "awaiting_flight_selection"
-    ] = False
-
-    state[
-        "awaiting_flight_confirmation"
-    ] = True
+    state["awaiting_flight_selection"] = False
+    state["awaiting_flight_confirmation"] = True
 
     params = state.get(
         "travel_parameters",
         {}
     )
+
     print("TRAVEL PARAMS =", params)
 
-    state["final_response"] = f"""
-    📋 Trip Review
+    response = f"""
+📋 Trip Review
 
-    📍 Origin
-    {params.get('origin')}
+📍 Origin
+{params.get('origin')}
 
-    📍 Destination
-    {params.get('destination')}
+📍 Destination
+{params.get('destination')}
 
-    📅 Departure Date
-    {params.get('departure_date')}
+📅 Departure Date
+{params.get('departure_date')}
+"""
 
-    👥 Passengers
-    {params.get('passengers')}
+    if params.get("return_date"):
 
-    💺 Cabin Class
-    {params.get('cabin_class')}
+        response += f"""
 
-    ✈️ Selected Flight
-    {selected['airline']}
-    ({selected['flight_number']})
+📅 Return Date
+{params.get('return_date')}
+"""
 
-    💰 Flight Price
-    ${selected['price']}
+    response += f"""
 
-    Please review the details above.
+👥 Passengers
+{params.get('passengers')}
 
-    Would you like to confirm this flight?
+💺 Cabin Class
+{params.get('cabin_class')}
 
-    """
+✈️ Selected Flight
+{selected['airline']}
+({selected['flight_number']})
+
+💰 Flight Price
+${selected['price']}
+
+Please review the details above.
+
+Would you like to confirm this flight?
+"""
+
+    state["final_response"] = response
 
     return state
 
@@ -905,23 +1011,19 @@ def handle_hotel_selection(state):
     )
 
     if not hotels:
-
-        state["final_response"] = (
-            "Sorry, I couldn't find any hotels."
-        )
-
-        state["awaiting_hotel_selection"] = False
-
         return state
 
     selected = None
 
-    if text.isdigit():
+    if text.strip().isdigit():
 
-        idx = int(text) - 1
+        index = int(
+            text.strip()
+        ) - 1
 
-        if 0 <= idx < len(hotels):
-            selected = hotels[idx]
+        if 0 <= index < len(hotels):
+
+            selected = hotels[index]
 
     else:
 
@@ -949,75 +1051,39 @@ def handle_hotel_selection(state):
     ] = True
 
     state["final_response"] = f"""
-    🏨 Hotel Review
+🏨 Hotel Review
 
-    Hotel:
-    {selected['name']}
+Hotel:
+{selected['name']}
 
-    ⭐ Stars:
-    {selected['stars']}
+⭐ Stars:
+{selected['stars']}
 
-    💰 Price:
-    ${selected['price_per_night']}/night
+💰 Price:
+${selected['price_per_night']}/night
 
-    🎁 Amenities:
-    {", ".join(selected.get("amenities", []))}
+🎁 Amenities:
+{", ".join(selected.get('amenities', []))}
 
-    📍 Distance:
-    {selected.get("distance", "N/A")}
+📍 Distance:
+{selected.get('distance', 'N/A')}
 
-    Please review the hotel details.
+Please review the hotel details.
 
-    Would you like to confirm this hotel?
-
-    """
+Would you like to confirm this hotel?
+"""
 
     return state
 
 def confirm_hotel(state):
 
-    text = state["user_input"].lower()
+    text = state["user_input"].lower().strip()
 
     if not state.get(
         "awaiting_hotel_confirmation",
         False
     ):
         return state
-
-    if text not in [
-        "yes",
-        "confirm",
-        "ok"
-    ]:
-        return state
-
-    # ----------------------------
-    # COMPLETE BOOKING
-    # ----------------------------
-
-    state[
-        "awaiting_hotel_confirmation"
-    ] = False
-
-    state["booking_confirmed"] = True
-
-    # ----------------------------
-    # RESET CONVERSATION FLAGS
-    # ----------------------------
-
-    state["awaiting_flight_selection"] = False
-
-    state["awaiting_flight_confirmation"] = False
-
-    state["awaiting_hotel_selection"] = False
-
-    state["awaiting_hotel_confirmation"] = False
-
-    state["awaiting_hotel_opt_in"] = False
-
-    # ----------------------------
-    # GET SELECTED ITEMS
-    # ----------------------------
 
     flight = state.get(
         "selected_flight",
@@ -1034,68 +1100,173 @@ def confirm_hotel(state):
         {}
     )
 
-    # ----------------------------
-    # FINAL RESPONSE
-    # ----------------------------
+    # ---------------------------------
+    # HOTEL REJECTED
+    # ---------------------------------
 
-    state["final_response"] = f"""
-    🎉 Booking Confirmed
+    if text in [
+        "no",
+        "cancel",
+        "reject"
+    ]:
 
-    ━━━━━━━━━━━━━━━━━━━━
+        state["awaiting_hotel_confirmation"] = False
 
-    ✈️ Flight
+        state["awaiting_flight_selection"] = False
+        state["awaiting_flight_confirmation"] = False
+        state["awaiting_hotel_selection"] = False
+        state["awaiting_hotel_confirmation"] = False
+        state["awaiting_hotel_opt_in"] = False
 
-    Airline:
-    {flight.get('airline')}
+        state["booking_confirmed"] = True
 
-    Flight Number:
-    {flight.get('flight_number')}
+        response = f"""
 
-    Price:
-    ${flight.get('price')}
+🎉 Flight Booking Confirmed
 
-    ━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━
 
-    🏨 Hotel
+✈️ Flight
 
-    {hotel.get('name')}
+Airline:
+{flight.get('airline')}
 
-    Price:
-    ${hotel.get('price_per_night')}/night
+Flight Number:
+{flight.get('flight_number')}
 
-    ━━━━━━━━━━━━━━━━━━━━
+Price:
+${flight.get('price')}
 
-    📍 Origin
-    {params.get('origin')}
+━━━━━━━━━━━━━━━━━━━━
 
-    📍 Destination
-    {params.get('destination')}
+📍 Origin
+{params.get('origin')}
 
-    📅 Departure Date
-    {params.get('departure_date')}
+📍 Destination
+{params.get('destination')}
 
-    📅 Return Date
-    {params.get('return_date', 'One Way')}
+📅 Departure Date
+{params.get('departure_date')}
+"""
 
-    👥 Passengers
-    {params.get('passengers')}
+        if params.get("return_date"):
 
-    💺 Cabin Class
-    {params.get('cabin_class')}
+            response += f"""
 
-    📍 Hotel Preference
-    {params.get('hotel_location_preference', 'No preference')}
+📅 Return Date
+{params.get('return_date')}
+"""
 
-    ━━━━━━━━━━━━━━━━━━━━
+        response += f"""
 
-    Thank you for using Friendly Travel Assistant.
-    """
+👥 Passengers
+{params.get('passengers')}
+
+💺 Cabin Class
+{params.get('cabin_class')}
+
+━━━━━━━━━━━━━━━━━━━━
+
+🏨 Hotel booking cancelled.
+
+Thank you for using Friendly Travel Assistant.
+"""
+
+        state["final_response"] = response
+
+        return state
+
+    # ---------------------------------
+    # HOTEL CONFIRMED
+    # ---------------------------------
+
+    if text not in [
+        "yes",
+        "confirm",
+        "ok"
+    ]:
+        return state
+
+    state["awaiting_hotel_confirmation"] = False
+
+    state["booking_confirmed"] = True
+
+    state["awaiting_flight_selection"] = False
+    state["awaiting_flight_confirmation"] = False
+    state["awaiting_hotel_selection"] = False
+    state["awaiting_hotel_confirmation"] = False
+    state["awaiting_hotel_opt_in"] = False
+
+    response = f"""
+
+🎉 Booking Confirmed
+
+━━━━━━━━━━━━━━━━━━━━
+
+✈️ Flight
+
+Airline:
+{flight.get('airline')}
+
+Flight Number:
+{flight.get('flight_number')}
+
+Price:
+${flight.get('price')}
+
+━━━━━━━━━━━━━━━━━━━━
+
+🏨 Hotel
+
+{hotel.get('name')}
+
+Price:
+${hotel.get('price_per_night')}/night
+
+━━━━━━━━━━━━━━━━━━━━
+
+📍 Origin
+{params.get('origin')}
+
+📍 Destination
+{params.get('destination')}
+
+📅 Departure Date
+{params.get('departure_date')}
+"""
+
+    if params.get("return_date"):
+
+        response += f"""
+
+📅 Return Date
+{params.get('return_date')}
+"""
+
+    response += f"""
+
+🌙 Nights
+{params.get('nights', 'N/A')}
+
+👥 Passengers
+{params.get('passengers')}
+
+💺 Cabin Class
+{params.get('cabin_class')}
+
+📍 Hotel Preference
+{params.get('hotel_location_preference') or 'No preference'}
+
+━━━━━━━━━━━━━━━━━━━━
+
+Thank you for using Friendly Travel Assistant.
+"""
+
+    state["final_response"] = response
+
     return state
 
-
 def aggregate_results(state):
-
-    # DO NOT overwrite greeting response
 
     if state.get("is_greeting", False):
         return state
@@ -1112,23 +1283,27 @@ def aggregate_results(state):
     )
 
     response = f"""
-    ✈️ Trip Search Results
+✈️ Trip Search Results
 
-    Origin:
-    {params.get('origin','')}
+📍 Origin:
+{params.get('origin', '')}
 
-    Destination:
-    {params.get('destination','')}
+📍 Destination:
+{params.get('destination', '')}
 
-    Departure:
-    {params.get('departure_date','')}
+📅 Departure:
+{params.get('departure_date', '')}
 
-    Travellers:
-    {params.get('passengers',1)}
+👥 Travellers:
+{params.get('passengers', 1)}
 
-    Cabin:
-    {params.get('cabin_class','economy')}
-    """
+💺 Cabin:
+{params.get('cabin_class', 'Economy')}
+"""
+
+    # ==================================
+    # FLIGHTS
+    # ==================================
 
     flight_response = state.get(
         "flight_response",
@@ -1136,9 +1311,11 @@ def aggregate_results(state):
     )
 
     if (
-        flight_response.get("status")
-        == "success"
+        not state.get("selected_flight")
+        and
+        not state.get("awaiting_flight_confirmation")
     ):
+        state["awaiting_flight_selection"] = True
 
         response += "\n\n✈️ Available Flights\n"
 
@@ -1152,35 +1329,59 @@ def aggregate_results(state):
 
             response += f"""
 
-    {idx}. {flight['airline']}
-    Flight: {flight['flight_number']}
-    Departure: {flight['departure']}
-    Arrival: {flight['arrival']}
-    Price: ${flight['price']}
-    """
-
-        # ----------------------------------
-        # WAIT FOR USER TO PICK FLIGHT
-        # ----------------------------------
-
-        state["awaiting_flight_selection"] = True
+{idx}. {flight['airline']}
+Flight: {flight['flight_number']}
+Departure: {flight['departure']}
+Arrival: {flight['arrival']}
+Price: ${flight['price']}
+"""
 
         response += """
 
-        Please choose a flight.
-        """
-    else:
+Please choose a flight.
+"""
+
+    elif state.get("selected_flight"):
+        state["awaiting_flight_selection"] = False
+
+    # ==================================
+    # HOTELS
+    # ==================================
+
+    hotel_response = state.get(
+        "hotel_response",
+        {}
+    )
+
+    if (
+        hotel_response.get("status")
+        == "success"
+    ):
+
+        response += "\n\n🏨 Available Hotels\n"
+
+        for idx, hotel in enumerate(
+            hotel_response.get(
+                "results",
+                []
+            ),
+            start=1
+        ):
+
+            response += f"""
+
+{idx}. {hotel['name']}
+⭐ {hotel['stars']} Stars
+💰 ${hotel['price_per_night']}/night
+📍 {hotel.get('distance', 'N/A')}
+"""
+
+    elif hotel_response:
 
         response += """
 
-        ❌ Sorry, I couldn't find flights for that route.
-
-        You may try:
-
-        • Tokyo
-        • Paris
-        • Singaporeund.
-        """
+🏨 No hotels available for the selected destination.
+"""
 
     state["final_response"] = response
 
@@ -1207,54 +1408,54 @@ builder.add_node(
 )
 
 builder.add_node(
-"check_missing",
-check_missing_information
-)
+    "check_missing",
+    check_missing_information
+    )
 
 builder.add_node(
-"clarification",
-ask_clarification
-)
+    "clarification",
+    ask_clarification
+    )
 
 builder.add_node(
-"modification",
-handle_modification
-)
+    "modification",
+    handle_modification
+    )
 
 builder.add_node(
-"flight_agent",
-call_flight_agent
-)
+    "flight_agent",
+    call_flight_agent
+    )
 
 builder.add_node(
-"hotel_agent",
-call_hotel_agent
-)
+    "hotel_agent",
+    call_hotel_agent
+    )
 
 builder.add_node(
-"flight_selection",
-handle_flight_selection
-)
+    "flight_selection",
+    handle_flight_selection
+    )
 
 builder.add_node(
-"flight_confirmation",
-confirm_flight
-)
+    "flight_confirmation",
+    confirm_flight
+    )
 
 builder.add_node(
-"hotel_selection",
-handle_hotel_selection
-)
+    "hotel_selection",
+    handle_hotel_selection 
+    )
 
 builder.add_node(
-"hotel_confirmation",
-confirm_hotel
-)
+    "hotel_confirmation",
+    confirm_hotel
+    )
 
 builder.add_node(
-"aggregate",
-aggregate_results
-)
+    "aggregate",
+    aggregate_results
+    )
 
 builder.add_node(
     "end",
@@ -1262,14 +1463,13 @@ builder.add_node(
 )
 
 builder.set_entry_point(
-"detect_intent"
-)
+    "detect_intent"
+    )
 
 builder.add_edge(
-
-"detect_intent",
-"greeting"
-)
+    "detect_intent",
+    "greeting"
+    )
 
 builder.add_edge(
     "greeting",
@@ -1282,14 +1482,14 @@ builder.add_edge(
 )
 
 builder.add_edge(
-"check_missing",
-"clarification"
-)
+    "check_missing",
+    "clarification"
+    )
 
 builder.add_edge(
-"clarification",
-"modification"
-)
+    "clarification",
+    "modification"
+    )
 
 builder.add_conditional_edges(
     "modification",

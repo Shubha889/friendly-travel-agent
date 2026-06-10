@@ -1,164 +1,240 @@
-# Friendly Assistant Agent Architecture
+# Friendly Travel Assistant Architecture
 
-This document describes the multi-agent travel booking system built for the Friendly Assistant Agent assignment.
-The architecture uses a LangGraph-based orchestration pattern with a single user-facing Orchestrator and two specialised A2A sub-agents: Flight and Hotel.
+## Overview
 
-## System Overview
+The system follows a multi-agent architecture built using LangGraph.
 
-The system is designed around three main layers:
+A single Orchestrator Agent manages the conversation and delegates travel-related tasks to specialized agents.
 
-- **User Interface**: A Streamlit chat UI that accepts natural language travel requests and displays friendly results.
-- **Orchestrator Agent**: The single user-facing LangGraph StateGraph that manages conversation state, intent parsing, clarifications, and delegation.
-- **Sub-agents**: Flight Agent and Hotel Agent, each implemented as its own LangGraph StateGraph and communicating with the orchestrator via the A2A protocol.
+---
 
-## High-level workflow
+## Architecture Diagram
 
-```mermaid
+mermaid
 flowchart TD
-  User[User] -->|Chat input| Streamlit[Streamlit UI]
-  Streamlit -->|User query| Orchestrator[Orchestrator Agent]
-  Orchestrator -->|Intent detection + state update| IntentDetection[Intent Detection]
-  Orchestrator -->|Clarification logic| ClarificationManager[Clarification Manager]
-  IntentDetection -->|flight_required| FlightAgent[Flight Agent]
-  IntentDetection -->|hotel_required| HotelAgent[Hotel Agent]
-  FlightAgent --> FlightValidation[Flight Validation]
-  FlightValidation --> FlightSearch[Flight Search]
-  FlightSearch --> FlightFormatter[Flight Response Formatter]
-  HotelAgent --> HotelValidation[Hotel Validation]
-  HotelValidation --> HotelSearch[Hotel Search]
-  HotelSearch --> HotelFormatter[Hotel Response Formatter]
-  FlightFormatter --> AggregationNode[Aggregation Node]
-  HotelFormatter --> AggregationNode
-  AggregationNode -->|Combined response| Orchestrator
-  Orchestrator -->|Friendly answer| Streamlit
-  Streamlit -->|Result| User
-```
 
-## Component responsibilities
+    User[User]
 
-### Orchestrator Agent
+    UI[Streamlit Chat UI]
 
-The Orchestrator is the only component that interacts with the user directly.
-It is responsible for:
+    Orchestrator[Orchestrator Agent]
 
-- maintaining session-level `TravelState`
-- extracting and merging travel parameters from user text
-- tracking pending clarifications and follow-up questions
-- deciding whether to delegate to the Flight Agent, Hotel Agent, both, or neither
-- aggregating and formatting results from sub-agents
-- answering general travel questions directly when no booking delegation is required
+    Extractor[Travel Detail Extractor]
 
-The orchestrator state includes:
+    FlightAgent[Flight Agent]
 
-- `conversation_history`
-- `travel_parameters`
-- `pending_clarification`
-- `flight_response`
-- `hotel_response`
-- `selected_flight` and `selected_hotel`
-- boolean flags like `flight_required`, `hotel_required`, `is_general_question`, and `is_modification_request`
+    HotelAgent[Hotel Agent]
 
-### Flight Agent
+    GeneralQA[Travel Advice Handler]
 
-The Flight Agent is specialised for flight search tasks and only handles A2A requests.
-Its internal StateGraph contains nodes for:
+    User --> UI
 
-- input validation
-- mock flight search logic
-- response formatting
+    UI --> Orchestrator
 
-It receives a structured A2A task request with fields such as `origin`, `destination`, `departure_date`, `return_date`, `passengers`, and `cabin_class`.
+    Orchestrator --> Extractor
 
-### Hotel Agent
+    Extractor --> Orchestrator
 
-The Hotel Agent is specialised for hotel search tasks and only handles A2A requests.
-Its internal StateGraph contains nodes for:
+    Orchestrator --> FlightAgent
 
-- input validation
-- mock hotel search logic
-- response formatting
+    Orchestrator --> HotelAgent
 
-It receives a structured A2A task request with fields such as `destination_city`, `check_in_date`, `check_out_date`, `guests`, `room_type`, and `location_preference`.
+    Orchestrator --> GeneralQA
 
-## A2A Protocol
+    FlightAgent --> Orchestrator
 
-The orchestrator and sub-agents communicate using a consistent request/response schema.
-The A2A protocol is defined in `agents/*/schemas.py`.
+    HotelAgent --> Orchestrator
 
-### Task Request Schema
+    GeneralQA --> Orchestrator
 
-```json
-{
-  "task_id": "uuid-string",
-  "task_type": "flight_search | hotel_search",
-  "session_id": "uuid-string",
-  "parameters": {
-    "origin": "SIN",
-    "destination": "TYO",
-    "departure_date": "2025-06-15",
-    "return_date": "2025-06-20",
-    "passengers": 1,
-    "cabin_class": "economy"
-  },
-  "metadata": {
-    "requested_by": "orchestrator",
-    "timestamp": "ISO-8601"
-  }
-}
-```
+    Orchestrator --> UI
 
-### Task Response Schema
+    UI --> User
 
-```json
-{
-  "task_id": "uuid-string",
-  "status": "success | partial | failed | needs_clarification",
-  "results": [],
-  "clarification_needed": null,
-  "error": null,
-  "metadata": {
-    "agent_id": "flight-agent | hotel-agent",
-    "timestamp": "ISO-8601"
-  }
-}
-```
+---
 
-## Workflow details
+## Orchestrator Agent
 
-1. **User sends a request**.
-2. **Orchestrator extracts details** from text and updates `travel_parameters`.
-3. **Orchestrator checks completeness**.
-   - If required fields are missing, it uses `pending_clarification` to ask follow-up questions.
-   - If the user asked a general travel question, it responds directly.
-4. **Orchestrator sends A2A requests** to sub-agents.
-5. **Sub-agents validate and search mock data**.
-6. **Sub-agents return structured responses**.
-7. **Orchestrator aggregates results** and sends a friendly summary back to the UI.
+Responsibilities:
 
-## Multi-turn conversation handling
+* Maintain TravelState
+* Extract travel parameters
+* Ask clarification questions
+* Track conversation progress
+* Handle modifications
+* Delegate to Flight Agent
+* Delegate to Hotel Agent
+* Handle general travel questions
+* Aggregate responses
 
-The system supports:
+State includes:
 
-- full-detail requests
-- partial requests that trigger clarifying questions
-- booking flow switchovers (flight-only, hotel-only, or both)
-- destination changes mid-conversation
-- round-trip flights with hotel dates inferred from flight dates
-- friendly failure handling when no mock results are available
+* origin
+* destination
+* departure_date
+* return_date
+* passengers
+* cabin_class
+* needs_hotel
+* selected_flight
+* selected_hotel
+* pending_clarification
 
-## Visualization
+---
 
-The Mermaid diagram above captures the main data flow and agent responsibilities.
+## Flight Agent
 
-For a more complete submission, include the diagram alongside the following implementation facts:
+Responsibilities:
 
-- `orchestrator/agent.py` is the primary LangGraph `StateGraph`
-- `agents/flight_agent/agent.py` and `agents/hotel_agent/agent.py` are independent sub-agent graphs
-- `interface/app.py` is the Streamlit chat UI entry point
+* Validate search request
+* Search mock flight inventory
+* Format flight options
+* Handle flight confirmation
 
-## Notes for reviewers
+Inputs:
 
-- The orchestrator acts as a router and session manager, not as a direct business logic engine.
-- The sub-agents implement reusable A2A task processing and can be unit tested independently.
-- The architecture is intentionally modular to make the flight and hotel agents replaceable without changing the orchestration flow.
+* origin
+* destination
+* departure_date
+* passengers
+* cabin_class
 
+Outputs:
+
+* flight recommendations
+* selected flight
+* booking confirmation
+
+---
+
+## Hotel Agent
+
+Responsibilities:
+
+* Search hotels
+* Recommend hotels
+* Handle hotel selection
+* Handle hotel modifications
+
+Inputs:
+
+* destination
+* check-in date
+* check-out date
+* location preference
+
+Outputs:
+
+* hotel recommendations
+* selected hotel
+* hotel confirmation
+
+---
+
+## Travel Detail Extraction
+
+The extractor supports:
+
+### Route Detection
+
+* Chennai → Tokyo
+* Bangalore → Singapore
+
+### Date Detection
+
+* Tomorrow
+* Today
+* Next Friday
+* 19 June
+* 24 June
+
+### Round Trip Detection
+
+Travel from Chennai to Tokyo on 19 June returning on 24 June
+
+### Passenger Detection
+
+* 2 passengers
+* 4 travellers
+
+### Cabin Detection
+
+* Economy
+* Business
+* First
+* Premium Economy
+
+### Modification Detection
+
+* Change destination to Paris
+* Replace hotel with Hilton Tokyo
+
+---
+
+## General Travel Questions
+
+Handled directly by the Orchestrator without invoking booking agents.
+
+Examples:
+
+* Is this a good time to visit Tokyo?
+* Is June a good time to visit Paris?
+* What should I visit in Tokyo?
+
+---
+
+## Current Supported Workflows
+
+### Workflow 1
+
+Multi-turn Flight Booking
+
+User → Route → Date → Passengers → Cabin → Flight Results
+
+### Workflow 2
+
+Round Trip Booking
+
+User → Complete Trip Details → Flight Results
+
+### Workflow 3
+
+Destination Modification
+
+User → Change Destination → Updated Flight Search
+
+### Workflow 4
+
+Flight Confirmation
+
+User → Select Flight → Confirm Flight
+
+### Workflow 5
+
+Travel Advice
+
+User → Travel Question → Advice Response
+
+---
+
+## A2A Communication
+
+The Orchestrator communicates with Flight and Hotel Agents through structured request/response payloads.
+
+Benefits:
+
+* Loose coupling
+* Independent agent testing
+* Easy replacement of agents
+* Scalable architecture
+
+---
+
+## Future Enhancements
+
+* Real flight providers
+* Real hotel providers
+* Agent memory persistence
+* Multi-city travel planning
+* Travel budget optimization
+* Weather-aware recommendations

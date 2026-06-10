@@ -44,9 +44,6 @@ defaults = {
     "awaiting_flight_selection": False,
     "awaiting_flight_confirmation": False,
     "awaiting_hotel_opt_in": False,
-    "awaiting_hotel_nights": False,
-    "awaiting_hotel_location": False,
-    "awaiting_hotel_search": False,
     "awaiting_hotel_selection": False,
     "awaiting_hotel_confirmation": False,
     "booking_confirmed": False
@@ -76,12 +73,6 @@ def reset_trip_state():
     st.session_state.awaiting_flight_confirmation = False
 
     st.session_state.awaiting_hotel_opt_in = False
-
-    st.session_state.awaiting_hotel_nights = False
-
-    st.session_state.awaiting_hotel_location = False
-
-    st.session_state.awaiting_hotel_search = False
 
     st.session_state.awaiting_hotel_selection = False
 
@@ -178,6 +169,7 @@ if user_input:
             )
 
             st.rerun()
+            st.stop()
 
             print("FLIGHT_SELECTION_RESULT =", result)
 
@@ -304,6 +296,9 @@ if user_input:
                     )
                 )
 
+                if result.get("awaiting_hotel_opt_in"):
+                    st.session_state.awaiting_hotel_opt_in = True
+
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -312,8 +307,7 @@ if user_input:
                 )
 
                 st.rerun()
-                if result.get("awaiting_hotel_opt_in"):
-                    st.session_state.awaiting_hotel_opt_in = True
+                st.stop()
 
         # ----------------------------------
         # PRIORITY 1: HOTEL NIGHTS (if opted in)
@@ -323,74 +317,13 @@ if user_input:
             and user_input.lower().strip()
             in ["yes", "y", "ok", "sure"]
         ):
+
             st.session_state.awaiting_hotel_opt_in = False
-            st.session_state.awaiting_hotel_nights = True
-            
-            with st.chat_message("assistant"):
-                st.write("🌙 How many nights will you stay?\n")
-                
-            st.rerun()
 
-        # ----------------------------------
-        # PRIORITY 2: COLLECT HOTEL NIGHTS
-        # ----------------------------------
-        elif st.session_state.awaiting_hotel_nights:
-
-            import re
-
-            match = re.search(
-                r"(\d+)",
-                user_input
-            )
-
-            if match:
-
-                nights = int(
-                    match.group(1)
-                )
-
-                st.session_state.travel_parameters[
-                    "nights"
-                ] = nights
-
-                st.session_state.awaiting_hotel_nights = False
-
-                st.session_state.awaiting_hotel_location = True
-
-                with st.chat_message("assistant"):
-                    st.write("""
-        📍 Any hotel location preference?
-
-        Examples:
-        • Shinjuku
-        • Tokyo Tower
-        • Marina Bay
-
-        Or: No preference
-        """)
-
-                st.rerun()
-
-            else:
-
-                with st.chat_message("assistant"):
-                    st.write(
-                        "Please enter number of nights."
-                    )
-
-                st.rerun()
-
-        # ----------------------------------
-        # PRIORITY 3: COLLECT HOTEL LOCATION
-        # ----------------------------------
-        elif st.session_state.awaiting_hotel_location:
-            
-            location = user_input.strip()
-            
-            if location.lower() != "no preference":
-                st.session_state.travel_parameters["hotel_location_preference"] = location
-            
             params = st.session_state.travel_parameters
+
+            if not params.get("nights"):
+                params["nights"] = 5
 
             from agents.hotel_agent.agent import (
                 graph as hotel_graph
@@ -399,38 +332,59 @@ if user_input:
             hotel_result = hotel_graph.invoke(
                 {
                     "request": {
+                        "task_id": "hotel-search",
+                        "task_type": "hotel_search",
+                        "session_id": "session-1",
                         "parameters": {
                             "destination":
-                                params.get(
-                                    "destination",
-                                    ""
-                                ),
+                                params.get("destination", ""),
+
                             "check_in_date":
-                                params.get(
-                                    "departure_date",
-                                    ""
-                                ),
+                                params.get("departure_date", ""),
+
+                            "guests":
+                                params.get("passengers", 1),
+
                             "hotel_location_preference":
                                 params.get(
                                     "hotel_location_preference",
                                     ""
                                 )
-                        }
+                        },
+                        "metadata": {}
                     }
                 }
             )
 
-            st.session_state.hotel_response = hotel_result.get(
-                "response",
-                {}
+            st.session_state.hotel_response = (
+                hotel_result.get(
+                    "response",
+                    {}
+                )
             )
-            st.session_state.awaiting_hotel_location = False
-            st.session_state.awaiting_hotel_selection = True
 
             hotels = (
                 st.session_state.hotel_response
                 .get("results", [])
             )
+
+            if not hotels:
+
+                response = """
+            🏨 Sorry, I couldn't find hotels for this destination.
+            """
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response
+                    }
+                )
+
+                st.rerun()
+                st.stop()
+
+            st.session_state.awaiting_hotel_selection = True
 
             response = "🏨 Available Hotels\n\n"
 
@@ -440,29 +394,33 @@ if user_input:
             ):
 
                 response += f"""
-{idx}. {hotel['name']}
-⭐ {hotel['stars']}
-${hotel['price_per_night']}/night
-📍 {hotel.get('distance', 'N/A')}
+        {idx}. {hotel['name']}
+        ⭐ {hotel['stars']}
+        💰 ${hotel['price_per_night']}/night
+        📍 {hotel.get('distance','N/A')}
 
-"""
+        """
 
-            response += "Please choose a hotel (enter number or name)."
+            response += "\nPlease choose a hotel."
 
-            with st.chat_message("assistant"):
-                st.write(response)
-            
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": response
+                }
+            )
+
             st.rerun()
-
-        # ----------------------------------
-        # HOTEL SELECTION
-        # ----------------------------------
+            st.stop()
+       
         elif st.session_state.awaiting_hotel_selection:
 
             state = {
                 "user_input": user_input,
+
                 "hotel_response":
                     st.session_state.hotel_response,
+
                 "awaiting_hotel_selection":
                     True
             }
@@ -471,6 +429,25 @@ ${hotel['price_per_night']}/night
                 state
             )
 
+            st.session_state.selected_hotel = (
+                result.get(
+                    "selected_hotel"
+                )
+            )
+
+            st.session_state.awaiting_hotel_selection = False
+
+            st.session_state.awaiting_hotel_confirmation = True
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": result["final_response"]
+                }
+            )
+
+            st.rerun()
+            st.stop()
         # ----------------------------------
         # HOTEL CONFIRMATION
         # ----------------------------------
@@ -559,49 +536,81 @@ ${hotel['price_per_night']}/night
                 }
 
                 result = confirm_hotel(state)
-                print("HOTEL CONFIRMATION RESULT =", result)
 
-        # ----------------------------------
-        # HOTEL OPT-IN: DECLINE
-        # ----------------------------------
+                st.session_state.booking_confirmed = (
+                    result.get(
+                        "booking_confirmed",
+                        False
+                    )
+                )
+
+                st.session_state.awaiting_hotel_confirmation = (
+                    result.get(
+                        "awaiting_hotel_confirmation",
+                        False
+                    )
+                )
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": result["final_response"]
+                    }
+                )
+
+                st.rerun()
+                st.stop()
+
         elif (
-            st.session_state.awaiting_hotel_opt_in 
-            and user_input.lower() in ["no", "nope", "not", "skip"]
+            st.session_state.awaiting_hotel_opt_in
+            and user_input.lower().strip()
+            in ["no", "nope", "not", "skip"]
         ):
+
+            st.session_state.awaiting_flight_selection = False
+            st.session_state.awaiting_flight_confirmation = False
+            st.session_state.awaiting_hotel_selection = False
+            st.session_state.awaiting_hotel_confirmation = False
             st.session_state.awaiting_hotel_opt_in = False
+
             st.session_state.booking_confirmed = True
-            
+
             flight = st.session_state.selected_flight
             params = st.session_state.travel_parameters
-            
+
             response = f"""
-✅ Flight Booking Confirmed
+            ✅ Flight Booking Confirmed
 
-━━━━━━━━━━━━━━━━━━━━
+            ━━━━━━━━━━━━━━━━━━━━
 
-✈️ Flight
+            ✈️ Flight
 
-Airline: {flight.get('airline')}
-Flight Number: {flight.get('flight_number')}
-Price: ${flight.get('price')}
+            Airline: {flight.get('airline')}
+            Flight Number: {flight.get('flight_number')}
+            Price: ${flight.get('price')}
 
-━━━━━━━━━━━━━━━━━━━━
+            ━━━━━━━━━━━━━━━━━━━━
 
-📍 Origin: {params.get('origin')}
-📍 Destination: {params.get('destination')}
-📅 Departure Date: {params.get('departure_date')}
-👥 Passengers: {params.get('passengers')}
-💺 Cabin: {params.get('cabin_class','Economy')}
+            📍 Origin: {params.get('origin')}
+            📍 Destination: {params.get('destination')}
+            📅 Departure Date: {params.get('departure_date')}
+            👥 Passengers: {params.get('passengers')}
+            💺 Cabin: {params.get('cabin_class', 'Economy')}
 
-━━━━━━━━━━━━━━━━━━━━
+            ━━━━━━━━━━━━━━━━━━━━
 
-Thank you for using Friendly Travel Assistant!"""
-            
-            with st.chat_message("assistant"):
-                st.write(response)
-            
+            Thank you for using Friendly Travel Assistant!
+            """
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": response
+                }
+            )
+
             st.rerun()
-
+            st.stop()
         # ----------------------------------
         # NORMAL ORCHESTRATOR
         # ----------------------------------
@@ -774,27 +783,6 @@ Thank you for using Friendly Travel Assistant!"""
             result.get(
                 "awaiting_hotel_opt_in",
                 st.session_state.awaiting_hotel_opt_in
-            )
-        )
-
-        st.session_state.awaiting_hotel_nights = (
-            result.get(
-                "awaiting_hotel_nights",
-                st.session_state.get("awaiting_hotel_nights", False)
-            )
-        )
-
-        st.session_state.awaiting_hotel_location = (
-            result.get(
-                "awaiting_hotel_location",
-                st.session_state.get("awaiting_hotel_location", False)
-            )
-        )
-
-        st.session_state.awaiting_hotel_search = (
-            result.get(
-                "awaiting_hotel_search",
-                st.session_state.get("awaiting_hotel_search", False)
             )
         )
 

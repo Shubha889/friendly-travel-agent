@@ -27,6 +27,8 @@ def default_response():
         "nights": 0,
         "hotel_location_preference": "",
         "modification_request": False,
+        "hotel_change_request": False,
+        "requested_hotel": "",
         "confidence": "low"
     }
 
@@ -171,7 +173,7 @@ def extract_travel_details(
     # -----------------------------
 
     passenger_match = re.search(
-        r"(\d+)\s+(passenger|traveller|traveler|people|guests)",
+        r"(\d+)\s+(?:passenger|passengers|traveller|travellers|traveler|travelers|people|guests)",
         text
     )
 
@@ -242,7 +244,7 @@ def extract_travel_details(
             )
 
         near_match = re.search(
-            r"near\s+([a-zA-Z\s]+)",
+            r"near\s+([a-zA-Z\s]+?)(?:\s+for|\s+\d+\s+nights?|$)",
             text
         )
 
@@ -274,40 +276,62 @@ def extract_travel_details(
         for word in modification_words
     ):
 
-        result[
-            "modification_request"
-        ] = True
+        result["modification_request"] = True
 
         destination_match = re.search(
-            r"(destination\s+to|go\s+to)\s+([a-zA-Z\s]+)",
+            r"(?:destination\s+to|go\s+to|change\s+to|switch\s+to)\s+([a-zA-Z\s]+)",
             text
         )
 
         if destination_match:
 
             result["destination"] = (
-                destination_match.group(2)
+                destination_match.group(1)
                 .strip()
                 .title()
             )
+
+        hotel_change = re.search(
+            r"(?:change|switch|replace)\s+hotel\s+(?:to\s+)?(.+)",
+            text
+        )
+
+        if hotel_change:
+
+            result["hotel_change_request"] = True
+
+            result["requested_hotel"] = (
+                hotel_change.group(1)
+                .strip()
+                .title()
+            )
+
+        result["confidence"] = "high"
+
+        return result
+
 
     # -----------------------------
     # ROUND TRIP
     # -----------------------------
 
     round_trip = re.search(
-        r"from\s+(.+?)\s+to\s+(.+?)\s+on\s+(.+?)\s+return\s+(.+)",
+        r"from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)\s+on\s+(\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+)\s+(?:and\s+)?return(?:ing)?(?:\s+on)?\s+(\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+)",
         text
     )
 
     if round_trip:
 
         result["origin"] = (
-            round_trip.group(1).title().strip()
+            round_trip.group(1)
+            .strip()
+            .title()
         )
 
         result["destination"] = (
-            round_trip.group(2).title().strip()
+            round_trip.group(2)
+            .strip()
+            .title()
         )
 
         result["departure_date"] = normalize_date(
@@ -318,33 +342,57 @@ def extract_travel_details(
             round_trip.group(4)
         )
 
+        try:
+
+            dep = datetime.strptime(
+                result["departure_date"],
+                "%Y-%m-%d"
+            )
+
+            ret = datetime.strptime(
+                result["return_date"],
+                "%Y-%m-%d"
+            )
+
+            result["nights"] = (
+                ret - dep
+            ).days
+
+        except Exception:
+            pass
+
         result["confidence"] = "high"
 
         return result
-
-
-    # -----------------------------
-    # SIMPLE ROUTE
-    # -----------------------------
-
-    route_match = re.search(
-        r"from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+)$",
+    
+    trip_with_date = re.search(
+        r"from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)\s+on\s+(\d{1,2}(?:st|nd|rd|th)?\s+[a-zA-Z]+)(?:\s+for\s+(\d+)\s+(?:passenger|passengers|traveller|travellers))?",
         text
     )
 
-    if route_match:
+    if trip_with_date:
 
         result["origin"] = (
-            route_match.group(1)
+            trip_with_date.group(1)
             .strip()
             .title()
         )
 
         result["destination"] = (
-            route_match.group(2)
+            trip_with_date.group(2)
             .strip()
             .title()
         )
+
+        result["departure_date"] = normalize_date(
+            trip_with_date.group(3)
+        )
+
+        if trip_with_date.group(4):
+
+            result["passengers"] = int(
+                trip_with_date.group(4)
+            )
 
         result["confidence"] = "high"
 
@@ -356,7 +404,7 @@ def extract_travel_details(
     # -----------------------------
 
     route_match = re.search(
-        r"from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+)",
+        r"from\s+([a-zA-Z\s]+?)\s+to\s+([a-zA-Z\s]+?)(?:\s+on|\s+for|$)",
         text
     )
 
@@ -377,19 +425,19 @@ def extract_travel_details(
         result["confidence"] = "high"
 
         return result
-
     # -----------------------------
     # DATE ONLY
     # -----------------------------
 
-    if text in [
-        "tomorrow",
-        "next friday",
-        "next monday"
-    ]:
+    date_match = re.search(
+        r"\d{1,2}(st|nd|rd|th)?\s+[a-zA-Z]+",
+        text
+    )
 
-        result["departure_date"] = (
-            normalize_date(text)
+    if date_match:
+
+        result["departure_date"] = normalize_date(
+            date_match.group(0)
         )
 
         result["confidence"] = "high"
@@ -399,21 +447,30 @@ def extract_travel_details(
     # YES / NO RESPONSES
     # -----------------------------
 
-    if text == "yes":
+    if text in [
+        "yes",
+        "y",
+        "ok",
+        "sure",
+        "no",
+        "n",
+        "nope"
+    ]:
 
-        result["needs_hotel"] = True
         result["confidence"] = "high"
 
         return result
 
-    if text == "no":
+    if text in [
+        "no",
+        "n",
+        "nope"
+    ]:
 
         result["needs_hotel"] = False
         result["confidence"] = "high"
 
         return result
-
-
     # -----------------------------
     # NIGHTS
     # -----------------------------
@@ -465,6 +522,8 @@ Schema:
 "nights":0,
 "hotel_location_preference":"",
 "modification_request":false,
+"hotel_change_request":false,
+"requested_hotel":"",
 "confidence":"high"
 }}
 
@@ -485,6 +544,28 @@ User:
         )
 
         data = json.loads(content)
+        # Prevent hallucinated nights
+
+        night_match = re.search(
+            r"(\d+)\s*nights?",
+            user_input.lower()
+        )
+
+        if night_match:
+
+            data["nights"] = int(
+                night_match.group(1)
+            )
+
+        else:
+
+            # Keep nights only if round-trip already calculated
+            if not (
+                data.get("departure_date")
+                and
+                data.get("return_date")
+            ):
+                data["nights"] = 0
 
         if data.get("departure_date"):
 

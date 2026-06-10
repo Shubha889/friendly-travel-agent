@@ -1,125 +1,232 @@
-# Friendly Assistant Agent
+# Friendly Travel Assistant Agent
 
-A multi-agent travel booking system built with LangGraph and the A2A protocol.
-The system includes an orchestrator agent, flight booking agent, hotel booking agent, and a Streamlit chat interface.
+A multi-agent travel booking assistant built using LangGraph, Streamlit, and the A2A (Agent-to-Agent) communication pattern.
+
+The system includes:
+
+* Orchestrator Agent
+* Flight Booking Agent
+* Hotel Booking Agent
+* Streamlit Chat Interface
+
+The assistant supports multi-turn travel planning, flight booking, hotel recommendations, destination modifications, and general travel advice.
+
+---
+
+# Features
+
+## Flight Booking
+
+Supports:
+
+* One-way trips
+* Round-trip flights
+* Passenger count
+* Cabin class selection
+* Flight confirmation flow
+
+Examples:
+
+* Travel from Chennai to Tokyo
+* Travel from Chennai to Tokyo on 19 June
+* Travel from Chennai to Tokyo on 19 June for 2 passengers
+* Travel from Chennai to Tokyo on 19 June returning on 24 June
+
+---
+
+## Hotel Booking
+
+Supports:
+
+* Hotel recommendations after flight booking
+* Hotel search near preferred locations
+* Hotel selection confirmation
+* Hotel modification requests
+
+Examples:
+
+* Find me a hotel in Tokyo
+* Hotel near Shinjuku
+* Change hotel to Shinjuku Granbell Hotel
+
+---
+
+## Travel Modifications
+
+Supports modifying existing bookings.
+
+Examples:
+
+* Change destination to Paris
+* Switch hotel to Hilton Tokyo
+
+---
+
+## General Travel Questions
+
+Supports travel advice without triggering booking workflows.
+
+Examples:
+
+* Is this a good time to visit Tokyo?
+* Is June a good time to visit Paris?
+* What are some places to visit in Tokyo?
+
+---
 
 ## Repository Structure
 
-- `orchestrator/`
-  - `agent.py` - Orchestrator LangGraph graph and dialogue logic
-  - `prompts.py` - system prompt templates and orchestrator guidance
-  - `state.py` - travel session state definition
-  - `extractor.py` - travel detail extraction and normalization logic
-- `agents/flight_agent/`
-  - `agent.py` - Flight agent LangGraph graph
-  - `mock_data.py` - mock flight inventory and search logic
-  - `schemas.py` - A2A request/response schema models
-- `agents/hotel_agent/`
-  - `agent.py` - Hotel agent LangGraph graph
-  - `mock_data.py` - mock hotel inventory and search logic
-  - `schemas.py` - A2A request/response schema models
-- `interface/`
-  - `app.py` - Streamlit chat UI entry point
-- `tests/`
-  - unit test coverage for orchestrator and agents
-- `docs/architecture.md` - architecture diagram and workflow overview
-- `.env.example` - sample environment variables
-- `.gitignore` - repository ignore rules for local files
-- `requirements.txt` - Python dependencies
+friendly-travel-agent/
 
-## Setup Instructions
+├── orchestrator/
 
-1. Clone the repository:
-   ```powershell
-   git clone <your-repo-url>
-   cd friendly-travel-agent
-   ```
+│ ├── agent.py
 
-2. Create and activate a Python virtual environment:
-   ```powershell
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
-   ```
+│ ├── extractor.py
 
-3. Install dependencies:
-   ```powershell
-   pip install -r requirements.txt
-   ```
+│ ├── prompts.py
 
-4. Copy `.env.example` to `.env` if you need to customize environment variables:
-   ```powershell
-   copy .env.example .env
-   ```
+│ └── state.py
 
-5. Run the Streamlit UI:
-   ```powershell
-   streamlit run interface/app.py
-   ```
+├── agents/
 
-6. Open the browser when prompted and start chatting with the Friendly Travel Assistant.
+│ ├── flight_agent/
 
-## Running Tests
+│ └── hotel_agent/
 
-Run the test suite with:
-```powershell
-pytest
+├── interface/
+
+│ └── app.py
+
+├── docs/
+
+│ └── architecture.md
+
+├── requirements.txt
+
+├── README.md
+
+└── .env
+
+---
+
+# Setup
+
+## Clone Repository
+
+```bash
+git clone <repository-url>
+cd friendly-travel-agent
 ```
 
-## What This Project Delivers
+## Create Virtual Environment
 
-- Orchestrator agent handling user conversation and intent parsing
-- Flight agent and hotel agent communicating via A2A request/response schemas
-- LangGraph `StateGraph` workflows for orchestrator and sub-agents
-- Multi-turn chat interface with clarifications and booking flow
-- Mock flight and hotel search engines for realistic demo data
-- Friendly conversational UX with aggregated results
+```bash
+python -m venv venv
+```
 
-## Architecture Notes
+Windows:
 
-The orchestrator is the only user-facing agent. It maintains session state, understands intent, asks clarifying questions, and delegates flight/hotel tasks to sub-agents.
+```bash
+venv\Scripts\activate
+```
 
-Sub-agents implement:
-- input validation node
-- search/retrieval node
-- response formatting node
+Mac/Linux:
 
-The A2A protocol is defined in `agents/*/schemas.py`:
-- `A2ATaskRequest`
-- `A2ATaskResponse`
+```bash
+source venv/bin/activate
+```
 
-See `docs/architecture.md` for the Mermaid diagram of the multi-agent workflow.
+## Install Dependencies
 
-## Submission Checklist
+```bash
+pip install -r requirements.txt
+```
 
-1. Confirm repository contains:
-   - `orchestrator/agent.py`
-   - `agents/flight_agent/agent.py`
-   - `agents/hotel_agent/agent.py`
-   - `interface/app.py`
-   - `tests/`
-   - `requirements.txt`
-   - `README.md`
-   - `.env.example`
-   - `docs/architecture.md`
+## Configure Environment Variables
 
-2. Run `pytest` and ensure tests pass.
-3. Run `streamlit run interface/app.py` and verify the UI starts.
-4. Push the repository to GitHub.
-5. Share the GitHub link for submission.
+Create .env
 
-## Submission Instructions
+```env
+GROQ_API_KEY=your_groq_api_key
+```
 
-- Use the repository link as your submission.
-- Make sure the branch is up to date with your final changes.
-- If a deadline is specified, submit before the deadline.
-- Be prepared to demo the workflow, highlight how the A2A protocol is used, and explain the LangGraph graphs.
+## Run Application
 
-## Helpful Demo Prompts
+```bash
+streamlit run interface/app.py
+```
 
-## Helpful Demo Prompts
+---
 
-- I want to travel from Bangalore to Singapore.
-- Is June a good time to visit Tokyo?
-- I want to travel from Chennai to Tokyo.
-- From Singapore to Tokyo.
-- Is it good time to visit Paris?
+# Demo Prompts
+
+## Multi-Turn Booking
+
+Travel from Chennai to Tokyo
+
+Tomorrow
+
+2
+
+Economy
+
+---
+
+## Round Trip Booking
+
+Travel from Chennai to Tokyo on 19 June returning on 24 June
+
+2
+
+Business
+
+---
+
+## One-Shot Query
+
+Travel from Chennai to Tokyo on 19 June for 2 passengers
+
+Economy
+
+---
+
+## Destination Modification
+
+Change destination to Paris
+
+---
+
+## General Travel Questions
+
+Is this a good time to visit Tokyo?
+
+Is June a good time to visit Paris?
+
+---
+
+# Technologies Used
+
+* Python
+* Streamlit
+* LangGraph
+* LangChain
+* Groq LLM
+* A2A Communication Pattern
+
+---
+
+# Future Improvements
+
+* Real flight APIs
+* Real hotel APIs
+* Calendar integration
+* User authentication
+* Persistent booking history
+* Multi-city itineraries
+
+---
+
+# Author
+
+Shubha
