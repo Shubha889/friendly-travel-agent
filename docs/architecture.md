@@ -53,6 +53,62 @@ flowchart TD
 
 ---
 
+## LangGraph Workflow
+```mermaid
+flowchart TD
+
+    START([Start])
+
+    INTENT[Detect Intent]
+
+    GREETING[Greeting]
+
+    GENERAL[General Travel Question]
+
+    CHECK_MISSING[Check Missing Info]
+
+    CLARIFY[Ask Clarification]
+
+    MODIFY[Handle Modification]
+
+    FLIGHT[Flight Agent]
+
+    HOTEL[Hotel Agent]
+
+    CONFIRM_FLIGHT[Confirm Flight]
+
+    CONFIRM_HOTEL[Confirm Hotel]
+
+    END([End])
+
+    START --> INTENT
+
+    INTENT -->|Greeting| GREETING
+    GREETING --> END
+
+    INTENT -->|Travel Question| GENERAL
+    GENERAL --> END
+
+    INTENT -->|Missing Info| CHECK_MISSING
+    CHECK_MISSING --> CLARIFY
+    CLARIFY --> INTENT
+
+    INTENT -->|Modification| MODIFY
+    MODIFY --> FLIGHT
+
+    INTENT -->|Flight Search| FLIGHT
+
+    FLIGHT --> CONFIRM_FLIGHT
+
+    CONFIRM_FLIGHT -->|Hotel Needed| HOTEL
+    CONFIRM_FLIGHT -->|No Hotel| END
+
+    HOTEL --> CONFIRM_HOTEL
+
+    CONFIRM_HOTEL --> END
+```
+---
+
 ## Orchestrator Agent
 
 Responsibilities:
@@ -214,6 +270,14 @@ User → Select Flight → Confirm Flight
 Travel Advice
 
 User → Travel Question → Advice Response
+
+### Workflow 6
+
+Flight + Hotel Booking
+
+User → Flight Search → Flight Confirmation →
+Hotel Recommendation → Hotel Confirmation →
+Final Booking Summary
 
 ---
 

@@ -159,9 +159,9 @@ streamlit run interface/app.py
 
 ---
 
-# Demo Prompts
+## Demo Prompts
 
-## Multi-Turn Booking
+### Flight Booking
 
 Travel from Chennai to Tokyo
 
@@ -171,37 +171,39 @@ Tomorrow
 
 Economy
 
----
-
-## Round Trip Booking
+### Round Trip
 
 Travel from Chennai to Tokyo on 19 June returning on 24 June
 
-2
+3
 
 Business
 
----
+### Destination Change
 
-## One-Shot Query
-
-Travel from Chennai to Tokyo on 19 June for 2 passengers
-
-Economy
-
----
-
-## Destination Modification
+Travel from Chennai to Tokyo
 
 Change destination to Paris
 
----
+### Travel Advice
 
-## General Travel Questions
-
-Is this a good time to visit Tokyo?
+Is it a good time to visit Tokyo?
 
 Is June a good time to visit Paris?
+
+### Hotel Flow
+
+Travel from Chennai to Paris on 19 June returning on 24 June
+
+2
+
+Economy
+
+Yes
+
+Select hotel 1
+
+Confirm
 
 ---
 
@@ -213,6 +215,12 @@ Is June a good time to visit Paris?
 * LangChain
 * Groq LLM
 * A2A Communication Pattern
+
+---
+
+## LangGraph Workflow
+
+![Workflow](docs/langgraph_workflow.png)
 
 ---
 
